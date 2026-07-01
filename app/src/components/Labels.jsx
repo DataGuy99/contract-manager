@@ -140,17 +140,69 @@ export function Labels({ labels, setLabels, projects }) {
 }
 function PanelSlots({ label, labels, setLabels }) {
   const [open, setOpen] = useState(false)
-  const upd = (num, k, v) => setLabels(labels.map(l => l.id === label.id ? { ...l, slots: l.slots.map(s => s.num === num ? { ...s, [k]: v } : s) } : l))
-  const filled = (label.slots || []).filter(s => s.description)
+  const slots = label.slots || []
+  const upd = (num, k, v) => setLabels(labels.map(l => {
+    if (l.id !== label.id) return l
+    let ns = l.slots.map(s => s.num === num ? { ...s, [k]: v } : s)
+    if (k === 'poles') { // 2-pole consumes same-side next slot (num+2)
+      const twin = num + 2
+      ns = ns.map(s => s.num === twin ? { ...s, linkedTo: v === 2 ? num : undefined, description: v === 2 ? '' : s.description } : s)
+    }
+    return { ...l, slots: ns }
+  }))
+  const filled = slots.filter(s => s.description && !s.linkedTo)
   return <div style={{ marginTop: 6 }}>
-    <button className="b" style={{ fontSize: 8, width: '100%' }} onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Edit'} circuit schedule ({filled.length}/42)</button>
-    {open && <div style={{ maxHeight: 220, overflowY: 'auto', marginTop: 4 }}>
-      {(label.slots || []).map(s => <div key={s.num} className="row" style={{ marginBottom: 2 }}>
-        <span className="m" style={{ width: 18, fontSize: 9 }}>{s.num}</span>
-        <select className="fi" style={{ maxWidth: 52, fontSize: 8, padding: 2 }} value={s.amps} onChange={e => upd(s.num, 'amps', Number(e.target.value))}>{AMPS.map(a => <option key={a}>{a}</option>)}</select>
-        <select className="fi" style={{ maxWidth: 68, fontSize: 8, padding: 2 }} value={s.breakerType} onChange={e => upd(s.num, 'breakerType', e.target.value)}>{BREAKER_TYPES.map(b => <option key={b}>{b}</option>)}</select>
-        <input className="fi" style={{ fontSize: 8, padding: 2 }} placeholder="feeds…" value={s.description} onChange={e => upd(s.num, 'description', e.target.value)} />
+    <div className="row" style={{ marginBottom: 0 }}>
+      <button className="b" style={{ fontSize: 8, flex: 1 }} onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Edit'} schedule ({filled.length})</button>
+      <button className="b" style={{ fontSize: 8, color: 'var(--gn)' }} onClick={() => printPanel(label)}>A5 Print</button>
+    </div>
+    {open && <div style={{ maxHeight: 300, overflowY: 'auto', marginTop: 4 }}>
+      {slots.map(s => s.linkedTo ? <div key={s.num} className="row" style={{ marginBottom: 2, opacity: .35, fontSize: 9 }}><span className="m" style={{ width: 18 }}>{s.num}</span><span style={{ flex: 1, fontStyle: 'italic' }}>↳ 2-pole w/ #{s.linkedTo}</span></div> :
+      <div key={s.num} className="row" style={{ marginBottom: 3 }}>
+        <span className="m" style={{ width: 18, fontSize: 10, fontWeight: 700, color: s.num % 2 ? 'var(--sc)' : 'var(--ac)' }}>{s.num}</span>
+        <select className="fi" style={{ maxWidth: 52, fontSize: 10, padding: '5px 2px' }} value={s.amps} onChange={e => upd(s.num, 'amps', Number(e.target.value))}>{AMPS.map(a => <option key={a}>{a}</option>)}</select>
+        <button className="b" style={{ fontSize: 9, padding: '4px 7px', minWidth: 34, color: s.poles === 2 ? 'var(--ac)' : 'var(--t3)' }} onClick={() => upd(s.num, 'poles', s.poles === 2 ? 1 : 2)}>{s.poles === 2 ? '2P' : '1P'}</button>
+        <select className="fi" style={{ maxWidth: 62, fontSize: 9, padding: '5px 2px' }} value={s.breakerType} onChange={e => upd(s.num, 'breakerType', e.target.value)}>{BREAKER_TYPES.map(b => <option key={b} value={b}>{b === 'standard' ? 'std' : b}</option>)}</select>
+        <input className="fi" style={{ fontSize: 11, padding: '5px 6px' }} placeholder="feeds…" value={s.description} onChange={e => upd(s.num, 'description', e.target.value)} />
       </div>)}
     </div>}
   </div>
+}
+
+// A5 laminate-ready panel schedule: odd column left, even right, like the physical panel
+function printPanel(l) {
+  const slots = l.slots || []
+  const cell = s => {
+    if (!s) return '<div class="cell empty"></div>'
+    if (s.linkedTo) return ''
+    const h = s.poles === 2 ? ' tall' : ''
+    const bt = s.breakerType && s.breakerType !== 'standard' ? `<span class="bt ${s.breakerType}">${s.breakerType.toUpperCase()}</span>` : ''
+    return `<div class="cell${h}${s.description ? '' : ' empty'}"><span class="n">${s.num}${s.poles === 2 ? '·' + (s.num + 2) : ''}</span><span class="a">${s.amps}A${s.poles === 2 ? ' 2P' : ''}</span>${bt}<span class="d">${s.description || ''}</span></div>`
+  }
+  const col = odd => slots.filter(s => (s.num % 2 === 1) === odd).map(cell).join('')
+  const w = window.open('', '_blank')
+  w.document.write(`<!DOCTYPE html><html><head><title>${l.name}</title><style>
+@page{size:A5 portrait;margin:8mm}
+*{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+body{padding:4mm;color:#111}
+.hdr{text-align:center;border:2.5px solid #111;border-radius:4px;padding:5px 8px;margin-bottom:5px}
+.hdr h1{font-size:15px;letter-spacing:.5px}
+.hdr .sub{font-size:9px;color:#444;margin-top:2px;display:flex;justify-content:center;gap:14px}
+.hdr .sub b{font-size:11px;color:#111}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 5px}
+.cell{display:flex;align-items:center;gap:5px;border:1px solid #333;border-radius:3px;padding:3px 5px;margin-bottom:2.5px;min-height:8mm;background:#fff}
+.cell.tall{min-height:17mm;background:#f5f5f5}
+.cell.empty{background:#fafafa;border-style:dashed;border-color:#bbb}
+.n{font-weight:800;font-size:9px;min-width:16px;color:#111}
+.a{font-size:9px;font-weight:700;color:#111;min-width:26px}
+.bt{font-size:6.5px;font-weight:800;padding:1px 3px;border-radius:2px;border:1px solid #111}
+.bt.gfci{background:#111;color:#fff}.bt.afci{background:#555;color:#fff}.bt.dual{background:#000;color:#fff}
+.d{font-size:9.5px;flex:1;line-height:1.15}
+.ft{margin-top:5px;font-size:7.5px;color:#666;text-align:center;display:flex;justify-content:space-between}
+</style></head><body>
+<div class="hdr"><h1>${l.name.toUpperCase()}</h1><div class="sub"><span>MAIN <b>${l.mainBreaker || '—'}A</b></span><span>PHASE <b>${l.phase || 1}</b></span>${l.description ? `<span>${l.description}</span>` : ''}</div></div>
+<div class="grid"><div>${col(true)}</div><div>${col(false)}</div></div>
+<div class="ft"><span>${new Date().toLocaleDateString()}</span><span>ID ${l.id}</span></div>
+<script>window.onload=()=>window.print()</script></body></html>`)
+  w.document.close()
 }
