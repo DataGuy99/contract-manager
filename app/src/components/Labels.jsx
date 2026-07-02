@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import QRCode from 'qrcode'
+import { load, save } from '../lib/storage'
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
 const BREAKER_TYPES = ['standard', 'gfci', 'afci', 'dual']
 const AMPS = [15, 20, 25, 30, 40, 50, 60, 100, 200]
@@ -51,6 +52,7 @@ export function Labels({ labels, setLabels, projects }) {
   const [view, setView] = useState('all')
   const [creating, setCreating] = useState(null), [f, setF] = useState({})
   const [printing, setPrinting] = useState(null)
+  const [branding, setBranding] = useState(false)
   const panels = labels.filter(l => l.labelType === 'panel')
   const shown = labels.filter(l => view === 'all' || l.labelType === view)
 
@@ -69,6 +71,7 @@ export function Labels({ labels, setLabels, projects }) {
     <div className="row" style={{ flexWrap: 'wrap' }}>
       {['all', 'panel', 'run', 'box'].map(v => <button key={v} className={'b' + (view === v ? ' ba' : '')} onClick={() => setView(v)}>{v}</button>)}
       <span style={{ flex: 1 }} />
+      <button className="b" onClick={() => setBranding(true)}>Branding</button>
       <button className="b" onClick={importTakeoff}>Import from Takeoff</button>
       <button className="b" onClick={() => setPrinting(shown)}>Print All</button>
       {['panel', 'run', 'box'].map(t => <button key={t} className="b ba" onClick={() => start(t)}>+ {t}</button>)}
@@ -120,6 +123,7 @@ export function Labels({ labels, setLabels, projects }) {
       </>}
       <button className="b ba" style={{ width: '100%', marginTop: 6 }} onClick={create} disabled={!f.name?.trim()}>Create</button>
     </div></div>}
+    {branding && <BrandingModal onClose={() => setBranding(false)} />}
     {printing && <div className="mo" onClick={() => setPrinting(null)}><div className="mc" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
       <div className="row no-print"><h2 style={{ flex: 1, fontSize: 13 }}>Print Labels</h2><button className="b ba" onClick={() => window.print()}>Print</button><button className="b" onClick={() => setPrinting(null)}>&times;</button></div>
       <div id="print-area" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -159,21 +163,26 @@ function PanelSlots({ label, labels, setLabels }) {
       <button className="b" style={{ fontSize: 8, flex: 1 }} onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Edit'} schedule ({filled.length})</button>
       <button className="b" style={{ fontSize: 8, color: 'var(--gn)' }} onClick={() => printPanel(label)}>A5 Print</button>
     </div>
-    {open && <div style={{ maxHeight: 300, overflowY: 'auto', marginTop: 4 }}>
-      {slots.map(s => s.linkedTo ? <div key={s.num} className="row" style={{ marginBottom: 2, opacity: .35, fontSize: 9 }}><span className="m" style={{ width: 18 }}>{s.num}</span><span style={{ flex: 1, fontStyle: 'italic' }}>↳ multi-pole w/ #{s.linkedTo}</span></div> :
-      <div key={s.num} className="row" style={{ marginBottom: 3 }}>
-        <span className="m" style={{ width: 18, fontSize: 10, fontWeight: 700, color: s.num % 2 ? 'var(--sc)' : 'var(--ac)' }}>{s.num}</span>
-        <select className="fi" style={{ maxWidth: 52, fontSize: 10, padding: '5px 2px' }} value={s.amps} onChange={e => upd(s.num, 'amps', Number(e.target.value))}>{AMPS.map(a => <option key={a}>{a}</option>)}</select>
-        <button className="b" style={{ fontSize: 9, padding: '4px 7px', minWidth: 34, color: s.poles === 3 ? 'var(--rd)' : s.poles === 2 ? 'var(--ac)' : 'var(--t3)' }} onClick={() => upd(s.num, 'poles', ((s.poles || 1) % 3) + 1)}>{(s.poles || 1) + 'P'}</button>
-        <select className="fi" style={{ maxWidth: 62, fontSize: 9, padding: '5px 2px' }} value={s.breakerType} onChange={e => upd(s.num, 'breakerType', e.target.value)}>{BREAKER_TYPES.map(b => <option key={b} value={b}>{b === 'standard' ? 'std' : b}</option>)}</select>
-        <input className="fi" style={{ fontSize: 11, padding: '5px 6px' }} placeholder="feeds…" value={s.description} onChange={e => upd(s.num, 'description', e.target.value)} />
+    {open && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 6px', maxHeight: 340, overflowY: 'auto', marginTop: 4 }}>
+      {[true, false].map(odd => <div key={odd ? 'L' : 'R'}>
+        {slots.filter(s => (s.num % 2 === 1) === odd).map(s => s.linkedTo ? <div key={s.num} style={{ opacity: .3, fontSize: 8, fontStyle: 'italic', padding: '2px 0', minHeight: 24 }}>{s.num} ↳ #{s.linkedTo}</div> :
+        <div key={s.num} style={{ marginBottom: 3 }}>
+          <div className="row" style={{ marginBottom: 1, gap: 3 }}>
+            <span className="m" style={{ width: 16, fontSize: 9, fontWeight: 700, color: odd ? 'var(--sc)' : 'var(--ac)' }}>{s.num}</span>
+            <select className="fi" style={{ maxWidth: 48, fontSize: 9, padding: '4px 1px' }} value={s.amps} onChange={e => upd(s.num, 'amps', Number(e.target.value))}>{AMPS.map(a => <option key={a}>{a}</option>)}</select>
+            <button className="b" style={{ fontSize: 8, padding: '3px 5px', minWidth: 28, color: s.poles === 3 ? 'var(--rd)' : s.poles === 2 ? 'var(--ac)' : 'var(--t3)' }} onClick={() => upd(s.num, 'poles', ((s.poles || 1) % 3) + 1)}>{(s.poles || 1)}P</button>
+            <select className="fi" style={{ maxWidth: 52, fontSize: 8, padding: '4px 1px' }} value={s.breakerType} onChange={e => upd(s.num, 'breakerType', e.target.value)}>{BREAKER_TYPES.map(b => <option key={b} value={b}>{b === 'standard' ? 'std' : b}</option>)}</select>
+          </div>
+          <input className="fi" style={{ fontSize: 10, padding: '4px 6px', width: '100%' }} placeholder="feeds…" value={s.description} onChange={e => upd(s.num, 'description', e.target.value)} />
+        </div>)}
       </div>)}
     </div>}
   </div>
 }
 
 // A5 laminate-ready panel schedule: odd column left, even right, like the physical panel
-function printPanel(l) {
+async function printPanel(l) {
+  const brand = await load('company', {})
   const slots = l.slots || []
   const cell = s => {
     if (!s) return '<div class="cell empty"></div>'
@@ -190,6 +199,10 @@ function printPanel(l) {
 @page{size:A5 portrait;margin:8mm}
 *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
 body{padding:4mm;color:#111}
+.brand{display:flex;align-items:center;gap:8px;margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid #999}
+.logo{height:11mm;max-width:26mm;object-fit:contain}
+.bmid{flex:1;text-align:center}.bname{font-size:13px;font-weight:800;letter-spacing:.5px}.bslogan{font-size:8px;font-style:italic;color:#555}
+.bright{text-align:right;font-size:8px;color:#333;line-height:1.4}
 .hdr{text-align:center;border:2.5px solid #111;border-radius:4px;padding:5px 8px;margin-bottom:5px}
 .hdr h1{font-size:15px;letter-spacing:.5px}
 .hdr .sub{font-size:9px;color:#444;margin-top:2px;display:flex;justify-content:center;gap:14px}
@@ -205,9 +218,28 @@ body{padding:4mm;color:#111}
 .d{font-size:9.5px;flex:1;line-height:1.15}
 .ft{margin-top:5px;font-size:7.5px;color:#666;text-align:center;display:flex;justify-content:space-between}
 </style></head><body>
+${brand.name ? `<div class="brand">${brand.logo ? `<img src="${brand.logo}" class="logo">` : ''}<div class="bmid"><div class="bname">${brand.name}</div>${brand.slogan ? `<div class="bslogan">${brand.slogan}</div>` : ''}</div><div class="bright">${brand.phone ? `<div>${brand.phone}</div>` : ''}${brand.license ? `<div>Lic. ${brand.license}</div>` : ''}</div></div>` : ''}
 <div class="hdr"><h1>${l.name.toUpperCase()}</h1><div class="sub"><span>MAIN <b>${l.mainBreaker || '—'}A</b></span><span>PHASE <b>${l.phase || 1}</b></span>${l.description ? `<span>${l.description}</span>` : ''}</div></div>
 <div class="grid"><div>${col(true)}</div><div>${col(false)}</div></div>
-<div class="ft"><span>${new Date().toLocaleDateString()}</span><span>ID ${l.id}</span></div>
+<div class="ft"><span>${new Date().toLocaleDateString()}</span>${brand.name ? `<span>${brand.name}${brand.phone ? ' · ' + brand.phone : ''}</span>` : ''}<span>ID ${l.id}</span></div>
 <script>window.onload=()=>window.print()</script></body></html>`)
   w.document.close()
+}
+
+function BrandingModal({ onClose }) {
+  const [b, setB] = useState(null)
+  useEffect(() => { load('company', {}).then(setB) }, [])
+  if (!b) return null
+  const set = (k, v) => setB({ ...b, [k]: v })
+  const logoUp = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => set('logo', r.result); r.readAsDataURL(f) }
+  return <div className="mo" onClick={onClose}><div className="mc" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
+    <div className="row"><h2 style={{ flex: 1, fontSize: 13 }}>Company Branding</h2><button className="b" onClick={onClose}>&times;</button></div>
+    <div style={{ fontSize: 10, color: 'var(--t3)', marginBottom: 8 }}>Shown on every printed panel schedule.</div>
+    <input className="fi" style={{ width: '100%', marginBottom: 6 }} placeholder="Company name" value={b.name || ''} onChange={e => set('name', e.target.value)} />
+    <input className="fi" style={{ width: '100%', marginBottom: 6 }} placeholder="Slogan" value={b.slogan || ''} onChange={e => set('slogan', e.target.value)} />
+    <div className="row"><input className="fi" placeholder="Phone" value={b.phone || ''} onChange={e => set('phone', e.target.value)} /><input className="fi" placeholder="License #" value={b.license || ''} onChange={e => set('license', e.target.value)} /></div>
+    <div className="row"><label className="b" style={{ cursor: 'pointer' }}>Upload logo<input type="file" accept="image/*" style={{ display: 'none' }} onChange={logoUp} /></label>
+      {b.logo && <><img src={b.logo} style={{ height: 32, background: '#fff', borderRadius: 4, padding: 2 }} /><button className="b" onClick={() => set('logo', undefined)}>remove</button></>}</div>
+    <button className="b ba" style={{ width: '100%', marginTop: 6 }} onClick={async () => { await save('company', b); onClose() }}>Save</button>
+  </div></div>
 }
