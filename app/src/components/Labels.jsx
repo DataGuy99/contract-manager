@@ -144,9 +144,12 @@ function PanelSlots({ label, labels, setLabels }) {
   const upd = (num, k, v) => setLabels(labels.map(l => {
     if (l.id !== label.id) return l
     let ns = l.slots.map(s => s.num === num ? { ...s, [k]: v } : s)
-    if (k === 'poles') { // 2-pole consumes same-side next slot (num+2)
-      const twin = num + 2
-      ns = ns.map(s => s.num === twin ? { ...s, linkedTo: v === 2 ? num : undefined, description: v === 2 ? '' : s.description } : s)
+    if (k === 'poles') { // multi-pole claims same-side slots below (N+2, N+4)
+      ns = ns.map(s => {
+        if (s.num === num + 2) return { ...s, linkedTo: v >= 2 ? num : undefined, description: v >= 2 ? '' : s.description }
+        if (s.num === num + 4) return { ...s, linkedTo: v === 3 ? num : undefined, description: v === 3 ? '' : s.description }
+        return s
+      })
     }
     return { ...l, slots: ns }
   }))
@@ -157,11 +160,11 @@ function PanelSlots({ label, labels, setLabels }) {
       <button className="b" style={{ fontSize: 8, color: 'var(--gn)' }} onClick={() => printPanel(label)}>A5 Print</button>
     </div>
     {open && <div style={{ maxHeight: 300, overflowY: 'auto', marginTop: 4 }}>
-      {slots.map(s => s.linkedTo ? <div key={s.num} className="row" style={{ marginBottom: 2, opacity: .35, fontSize: 9 }}><span className="m" style={{ width: 18 }}>{s.num}</span><span style={{ flex: 1, fontStyle: 'italic' }}>↳ 2-pole w/ #{s.linkedTo}</span></div> :
+      {slots.map(s => s.linkedTo ? <div key={s.num} className="row" style={{ marginBottom: 2, opacity: .35, fontSize: 9 }}><span className="m" style={{ width: 18 }}>{s.num}</span><span style={{ flex: 1, fontStyle: 'italic' }}>↳ multi-pole w/ #{s.linkedTo}</span></div> :
       <div key={s.num} className="row" style={{ marginBottom: 3 }}>
         <span className="m" style={{ width: 18, fontSize: 10, fontWeight: 700, color: s.num % 2 ? 'var(--sc)' : 'var(--ac)' }}>{s.num}</span>
         <select className="fi" style={{ maxWidth: 52, fontSize: 10, padding: '5px 2px' }} value={s.amps} onChange={e => upd(s.num, 'amps', Number(e.target.value))}>{AMPS.map(a => <option key={a}>{a}</option>)}</select>
-        <button className="b" style={{ fontSize: 9, padding: '4px 7px', minWidth: 34, color: s.poles === 2 ? 'var(--ac)' : 'var(--t3)' }} onClick={() => upd(s.num, 'poles', s.poles === 2 ? 1 : 2)}>{s.poles === 2 ? '2P' : '1P'}</button>
+        <button className="b" style={{ fontSize: 9, padding: '4px 7px', minWidth: 34, color: s.poles === 3 ? 'var(--rd)' : s.poles === 2 ? 'var(--ac)' : 'var(--t3)' }} onClick={() => upd(s.num, 'poles', ((s.poles || 1) % 3) + 1)}>{(s.poles || 1) + 'P'}</button>
         <select className="fi" style={{ maxWidth: 62, fontSize: 9, padding: '5px 2px' }} value={s.breakerType} onChange={e => upd(s.num, 'breakerType', e.target.value)}>{BREAKER_TYPES.map(b => <option key={b} value={b}>{b === 'standard' ? 'std' : b}</option>)}</select>
         <input className="fi" style={{ fontSize: 11, padding: '5px 6px' }} placeholder="feeds…" value={s.description} onChange={e => upd(s.num, 'description', e.target.value)} />
       </div>)}
@@ -175,9 +178,11 @@ function printPanel(l) {
   const cell = s => {
     if (!s) return '<div class="cell empty"></div>'
     if (s.linkedTo) return ''
-    const h = s.poles === 2 ? ' tall' : ''
+    const p = s.poles || 1
+    const h = p === 3 ? ' tall3' : p === 2 ? ' tall' : ''
+    const nums = p === 3 ? `${s.num}·${s.num + 2}·${s.num + 4}` : p === 2 ? `${s.num}·${s.num + 2}` : s.num
     const bt = s.breakerType && s.breakerType !== 'standard' ? `<span class="bt ${s.breakerType}">${s.breakerType.toUpperCase()}</span>` : ''
-    return `<div class="cell${h}${s.description ? '' : ' empty'}"><span class="n">${s.num}${s.poles === 2 ? '·' + (s.num + 2) : ''}</span><span class="a">${s.amps}A${s.poles === 2 ? ' 2P' : ''}</span>${bt}<span class="d">${s.description || ''}</span></div>`
+    return `<div class="cell${h}${s.description ? '' : ' empty'}"><span class="n">${nums}</span><span class="a">${s.amps}A${p > 1 ? ' ' + p + 'P' : ''}</span>${bt}<span class="d">${s.description || ''}</span></div>`
   }
   const col = odd => slots.filter(s => (s.num % 2 === 1) === odd).map(cell).join('')
   const w = window.open('', '_blank')
@@ -191,7 +196,7 @@ body{padding:4mm;color:#111}
 .hdr .sub b{font-size:11px;color:#111}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:0 5px}
 .cell{display:flex;align-items:center;gap:5px;border:1px solid #333;border-radius:3px;padding:3px 5px;margin-bottom:2.5px;min-height:8mm;background:#fff}
-.cell.tall{min-height:17mm;background:#f5f5f5}
+.cell.tall{min-height:17mm;background:#f5f5f5}\n.cell.tall3{min-height:26mm;background:#ececec}
 .cell.empty{background:#fafafa;border-style:dashed;border-color:#bbb}
 .n{font-weight:800;font-size:9px;min-width:16px;color:#111}
 .a{font-size:9px;font-weight:700;color:#111;min-width:26px}
